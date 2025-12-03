@@ -96,6 +96,60 @@ table examples = do
 ```
 
 We can say everything we need to say about a gien table, in a format that's reasonably easy
-to parse, while specifying all the keys we want. With just this schema (and a few others), we can typecheck schemas -- verifying that foreign ids actually refer to real columns; we can have a compilation of all schemas to check for consistency. We can auto-generate a 'create' statement from this, if we want. This doesn't yet help with migrations, but having the current schema is a good start toward that end.
+to parse, while specifying all the keys we want. With just this schema (and a few others), we can typecheck schemas -- verifying that foreign ids actually refer to real columns; we can have a compilation of all schemas to check for consistency. We can auto-generate a 'create' statement from this, if we want. This doesn't yet help with migrations, but having the current schema is a good start toward that end. We can also generate a full Type from this schema,
+that is valid in Purescript, if we want, along with basic ways to query for all data, or
+insert, delete, and update a record with this singular type.
+  However, this singular type would be very bare. It wouldn't necessarily have the right
+configuration on it. It wouldn't necessarily have any desired "where" statements in the
+query either. And it might not be easy to save to the database.
+
+When faced with interacting with a database's data, the application faces the problem of how to interact with the data, when it is in a poor state for use by the application -- how to retrieve data is often done by SQL construction, by literally specifying runtime fields as strings, and query operators as strings, such that the application breaks when the SQL database changes. This is unacceptable, and faces the further problem that it's hard to get relational data -- hard to choose what associated data exists, and hard to use it.
+  It's understandable why we might want to allow apps to do SQL construction. It's convenient, and it seems more _efficient_ -- after all, the database is doing all the querying, so we get exactly the data we want, and no more; the application doesn't even have to do anything. But the problem with this is that it moves a _correctness_ constraint -- which fields exist, and what type they are assumed to be -- directly into the runtime, where it's difficult to validate their correctness, because the type assertions have disappeared. This is most efficient in the short-term, but awful in the long-term. Changes to schema break the code. Applying filters to queries is awkward, and any query risks editing more records than it should, particularly when queries run as Admin. Nothing is certain, no security necessarily exists, or can be properly planned-for, on the backend. Access Control technology can be provided to check operations at every stage, but this just increases the complexity of security, and the testing of security -- or at least, it can. Things don't stay as simple as they should. Adding complexity is no good to anyone.
+  It also makes it hard for us to build relationships that we can use, abstractly. Say that we have a one-to-many relationship, and we want for a given record to _always_ have access to this relationship, in some form. Hard to do through SQL, because SQL only has joins, and only operates on rows -- SQL only operates on singular collections. But application code conceives of things in _multiple_ collections. And what's interesting is that the data size of what we're doing is frequently too large to reasonably fit in memory. And yet we still want to manipulate the data, to some degree. But how?
+  We might, as a start, try to conceive of a query, and how we might try to save edits to the data to the database. Ideally, we'd use an Update command for _all_ of them -- but this isn't truly possible; we don't want to actually be writing queries in SQL. So instead, we have to read each item into memory, filter for whether we want to update it, perform the update based on its local values, and then save it -- or at least queue it to be saved, or added to the commit.
+  To do this, a query cannot return a simple data structure of objects, since it leaves us with no way of working with the data at a true level -- just as a Ref provides a place to store data, we need a Ref to provide a way to _save_ data. So a DbRef provides _insert_ and _update_ and _delete_ commands out of necessity, because that's the only way for State to (A) exist in memory, and (B) exist in the database. If we assume a kind of Cursor based on the specific type, this enables us to iterate through the database, page by page (at least to some extent) while editing specific data items in-memory before submitting them. This is highly useful.
+  The problem, however, is the async nature of the data. We never have the data together at any one point in time; data is being loaded in as we request more. But this creates a specific kind of problem -- the data does not behave as data, but as a source of effects. We lose access to the data; it all has to be done in one place. We do not have _lazy_ data -- we have to perform all actions on the data immediately. Which is odd, particularly for data processing pipelines, because we cannot separate pipelines at all -- each query must finish executing, and cannot communicate with subsequent pipelines, and ultimately this forces us to run the queries multiple times, or to stuff all items together in one place.
+  While we perhaps cannot have a pure List or LazyList, we certainly do have the concept of an asyncronous computation builder that represents computations on lazily-retrieved data, when they arrive. And it seems like it's _this_ abstraction that is what a Query fundamentally represents in many cases -- the ability take an existing Async computation, and map a new computation on it to produce a NEW computation that possibly returns a different set of lazy values. And eventually, to execute one of them at the desired time -- just one -- after all the computations have been described.
+  This explains what queries are -- or what they could be. And subsequent to that, we can start thinking of how to add _relationships_ and _complex queries_ as the sources of our data. For
+example, we might try to define a type that contains related data:
+
+```
+type Parent p = 
+  { id
+  , name replaces nickname
+  , age
+  , weight
+  , children: Many Human h where h.parentId == p.id
+  } on humans
   
+type Human h = 
+  { name
+  , age
+  , weight
+  , parentId
+  , parent: Single Parent p where p.id == h.parentId
+  } on humans
   
+query allHumans = Human
+
+query children = Human where age < 15
+```
+
+This is a relationship between types that describes the relationship, but does _not_ necessarily describee the source tables -- just how the types come together. In this case,
+it works fine to define the types on the 'humans' table -- the compiler can verify that each such table type actually has the requested fields, and can auto-generate the 'children' related data as an EffectCursor that filters the data, while still making it possible for us to iterate through the children and save their data. And the relational builder itself is only aware of what is on the type -- it doesn't have visibility into the underlying table; it is entirely up
+to the underlying code-generation to build the write queries for this.
+
+This enables types to be _independent_ of the exact table structure, and while we cannot
+create types that hide the tables and pretends they don't exist, this is an important first step for translating SQL layout descriptors into actual application code that we can work with. It is, in short, an important layer that we can use to build more on top of it, because it quickly expresses the SQL table layout in forms that we are interested in -- the exact fields, and the exact relationships that matter for a type -- we can even filter the humans table to include _fewer_ human records, as above in `where age < 15`. But all this takes place in the database descriptions, _none_ of it takes place in the application code, and _all_ of it can be checked by the compiler.
+
+Once we have basic application bindings that are auto-generated from the schema, and type-checked, we can then write _data mappings_ -- that is, higher-level constructs that can be saved, updated, and so on while abstracting the tables -- because _representing_ the tables accurately in the programming language is needed first, before we can abstract the tables away, if we want things to be type-checked properly.
+
+To enable migrations, we can allow (or require) schema to be labeled by version. We can then
+allow a _second_ declaration of a schema (a table) with an updated version, such that the tables and columns are updated. The types will need to be updated to reflect the _target_ schema, or we will need to separate the file itself into sections, by schema. To compile it then, is to generate an initial function for migrating the schema, and to simultaneously deploy the code that requires the second schema.
+  Thus, deploying code that updates the database necessarily shuts out requests while the database is updated. There's no other choice. Should seamless migrations be desired, schema updates would need to occur along with schema-labeled name replacements. Alternatively, for a distributed database, we would set up a second database ... but I don't need to deal with that. In fact, I'm fairly sure that what I say earlier is just _wrong_, but that I like the facilities to recognize it.
+  More clearly, a migration algorithm needs a starting schema, and an ending schema, and a mapping _between_ schema for any fields that are changed, or any new tables that are created, because we don't want to _drop_ fields in most cases -- field renames are hard. Generating the SQL to perform the migration is therefore not that difficult -- what _is_ difficult, potentially, is modifying the queries of the app to support the new schema. And so the question is -- can we modify the schema AND support the current app's use of the schema? Well, only in limited scenarios, where all existing fields are unchanged. If they ARE changed, then data mapping is needed, to hide the underlying database table while the schema changes. Thus, migration would seem to approach in step-by-step fashion -- add a field. Hide the field differences in a data-mapped object. Behind the scenes, move all data into the new field(s), and keep them synced. And so on, and so on. This is simply necessary. It isn't as simple as we would like, but no other way of migrating is really even possible.
+
+During compilation, references will be needed -- for some types to reference types in other files. But since this is relational, circular imports will be completely necessary. Is that possible? Yes. Because a first pass to compile non-relationships is possible ... so it should be fine. Probably.
+
+
+
