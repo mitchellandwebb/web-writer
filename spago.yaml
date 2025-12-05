@@ -19,6 +19,7 @@ package:
     - tuples
     - webb-test
     - webb-refer
+    - webb-monad
   test:
     main: Test.Main
     dependencies: []
@@ -29,3 +30,4 @@ workspace:
     spec-discovery: 8.2.0
     webb-test: 0.0.1
     webb-refer: 0.0.1
+    webb-monad: 0.0.1

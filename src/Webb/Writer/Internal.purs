@@ -9,25 +9,32 @@ import Data.Map as M
 import Data.String (Pattern(..), Replacement(..))
 import Data.String as Str
 import Data.Tuple (Tuple(..))
+import Webb.Monad.Prelude (timesRepeat_)
 import Webb.State.Prelude (mmodify_, mread, mreads, mwrite)
 import Webb.Writer.ForEach (after, each, forEach_, inBetween)
+import Webb.Writer.String (escape)
 
 
 {- The writer monad enables us to write to the monoidal source. It has to maintain the indent level in such a way that changes after a newline. Thus, we write to a thing, and utilize the indent level. Newlines ... are special. To prevent newlines from causing a problem, though, perhaps we have to count the newlines and reset the indent level when needed.
 -}
 
-
-type Position = 
+type St = 
   { indentSpaces :: Int
   , line :: Int
   , column :: Int
   , output :: Array String
   }
 
-type WriterM' m a = StateT Position m a
+type Position = 
+  { indentSpaces :: Int
+  , line :: Int
+  , column :: Int
+  }
+
+type WriterM' m a = StateT St m a
 type WriterM m = WriterM' m Unit
 
-default :: Position
+default :: St
 default = 
   { indentSpaces: 0
   , line: 0
@@ -35,17 +42,26 @@ default =
   , output: []
   }
 
-execWriterM :: forall m a. Monad m => Position -> WriterM' m a -> m Position
+defaultPos :: Position
+defaultPos = 
+  { indentSpaces: 0
+  , line: 0
+  , column: 0
+  }
+
+execWriterM :: forall m a. Monad m => St -> WriterM' m a -> m St
 execWriterM pos prog = do execStateT prog pos
 
-evalWriterM :: forall m a. Monad m => Position -> WriterM' m a -> m a
+evalWriterM :: forall m a. Monad m => St -> WriterM' m a -> m a
 evalWriterM pos prog = do evalStateT prog pos
 
-runWriterM :: forall m a. Monad m => Position -> WriterM' m a -> m (Tuple a Position)
+runWriterM :: forall m a. Monad m => St -> WriterM' m a -> m (Tuple a St)
 runWriterM pos prog = do runStateT prog pos
 
 getPosition :: forall m. Monad m => WriterM' m Position
-getPosition = mread
+getPosition = do 
+  st <- mread
+  pure $ { indentSpaces: st.indentSpaces, line: st.line, column: st.column }
 
 getOutput :: forall m. Monad m => WriterM' m String
 getOutput = do mreads $ _.output >>> Str.joinWith ""
@@ -77,11 +93,23 @@ withIndent n prog = do
 -- line and column state, while tabs will be converted to two-space inserts.
 write :: forall m. Monad m => String -> WriterM m
 write str = do
-  let lines = str # Str.split (Pattern "\n") >>> A.filter (_ == "")
-      mapped = lines <#> Str.replace (Pattern "\t") (Replacement $ spaces 2)
-  forEach_ mapped do 
-    each addToLine
-    inBetween \_ -> do addNewLine
+  when (str /= "") do
+    let split = str # Str.split (Pattern "\n")
+        lines = A.filter (_ /= "") split
+        beforeCount = split # A.takeWhile (_ == "") >>> A.length
+        afterCount = split # A.reverse >>> A.takeWhile (_ == "") >>> A.length
+        mapped = lines <#> Str.replace (Pattern "\t") (Replacement $ spaces 2)
+        
+    if A.length lines == 0 then
+      timesRepeat_ (max 0 (beforeCount - 1)) do addNewLine
+    else do
+      timesRepeat_ beforeCount do addNewLine
+
+      forEach_ mapped do 
+        each addToLine
+        inBetween \_ -> addNewLine
+        
+      timesRepeat_ afterCount do addNewLine
 
   where
   -- Adding to the line always bumps to the requested indent if the current
@@ -146,8 +174,6 @@ putRecordUpdate name map = do
 putRecord' :: forall m. Monad m => String -> Map String String -> WriterM m 
 putRecord' sep map = do
   token "{"
-  newline
-
   let arr = M.toUnfoldable map :: Array _
   forEach_ arr do
     each \(Tuple key value') -> do
@@ -184,12 +210,18 @@ bodyEquals name args = do
 
 -- Puts the initial part of the newtype.
 newtypeEquals :: forall m. Monad m => 
-  String -> WriterM m
-newtypeEquals name = do
-  token "newtype" *> token name *> equals 
+  String -> Array String -> WriterM m
+newtypeEquals name args = do
+  token "newtype" *> token name 
+  forEach_ args do each token 
+  equals 
 
-dataEquals :: forall m. Monad m => WriterM m
-dataEquals = do token "data" *> equals
+dataEquals :: forall m. Monad m => 
+  String -> Array String -> WriterM m
+dataEquals name args = do 
+  token "data" *> token name
+  forEach_ args do each token 
+  equals
   
 -- Write a type, whether that's "Either a b" or "a" or "Boolean"
 putType :: forall m. Monad m => String -> Array String -> WriterM m
@@ -213,13 +245,13 @@ putImport s = token "import" *> token s
 string :: forall m. Monad m => String -> WriterM m
 string s = do 
   token "\""
-  token s
-  token "\""
+  write $ escape s
+  write "\""
 
 -- An input multiline string automatically escapes the newlines and tabs so
 -- no escaping is needed. That ... should be fine, I think.
 multiLine :: forall m. Monad m => String -> WriterM m
 multiLine s = do 
   token "\"\"\"" 
-  token s 
-  token "\"\"\""
+  write s 
+  write "\"\"\""

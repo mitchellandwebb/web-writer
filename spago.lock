@@ -21,6 +21,7 @@
             "spec-discovery",
             "spec-node",
             "tuples",
+            "webb-monad",
             "webb-refer",
             "webb-test"
           ],
@@ -105,6 +106,7 @@
             "typelevel-prelude",
             "unfoldable",
             "unsafe-coerce",
+            "webb-monad",
             "webb-refer",
             "webb-test"
           ]
@@ -649,6 +651,7 @@
     },
     "extra_packages": {
       "spec-discovery": "8.2.0",
+      "webb-monad": "0.0.1",
       "webb-refer": "0.0.1",
       "webb-test": "0.0.1"
     }
@@ -1774,6 +1777,27 @@
       "version": "6.0.0",
       "integrity": "sha256-IqIYW4Vkevn8sI+6aUwRGvd87tVL36BBeOr0cGAE7t0=",
       "dependencies": []
+    },
+    "webb-monad": {
+      "type": "registry",
+      "version": "0.0.1",
+      "integrity": "sha256-r5Hn+lPPWknbc8VYXuYWvKxlAIS7t31ZMa5pDQ2Tr6Q=",
+      "dependencies": [
+        "aff",
+        "arrays",
+        "debug",
+        "effect",
+        "either",
+        "exceptions",
+        "foldable-traversable",
+        "integers",
+        "lists",
+        "maybe",
+        "monad-loops",
+        "newtype",
+        "prelude",
+        "transformers"
+      ]
     },
     "webb-refer": {
       "type": "registry",
