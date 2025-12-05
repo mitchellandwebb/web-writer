@@ -124,3 +124,10 @@ putType name args = do
   
 putDo :: forall m. Monad m => WriterM m
 putDo = do token "do"
+
+putAdo :: forall m. Monad m => WriterM m
+putAdo = do token "ado"
+
+moduleWhere :: forall m. Monad m => String -> WriterM m
+moduleWhere m = do
+  token "module" *> token m *> token "where"
