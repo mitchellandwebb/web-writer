@@ -1,12 +1,16 @@
 module Webb.Writer.Internal where
 
 import Prelude
-import Webb.Writer.ForEach
 
-import Control.Monad.State (StateT)
+import Control.Monad.State (StateT, evalStateT, execStateT, lift, runStateT)
+import Data.Array as A
 import Data.Map (Map)
 import Data.Map as M
+import Data.String (Pattern(..), Replacement(..))
+import Data.String as Str
 import Data.Tuple (Tuple(..))
+import Webb.State.Prelude (mmodify_, mread, mreads, mwrite)
+import Webb.Writer.ForEach (after, each, forEach_, inBetween)
 
 
 {- The writer monad enables us to write to the monoidal source. It has to maintain the indent level in such a way that changes after a newline. Thus, we write to a thing, and utilize the indent level. Newlines ... are special. To prevent newlines from causing a problem, though, perhaps we have to count the newlines and reset the indent level when needed.
@@ -23,21 +27,85 @@ type Position =
 type WriterM' m a = StateT Position m a
 type WriterM m = WriterM' m Unit
 
--- TODO -- write a token, adding a space if needed. We don't need it
--- if we're at the start of the (indented) line.
+execWriterM :: forall m a. Monad m => Position -> WriterM' m a -> m Position
+execWriterM pos prog = do execStateT prog pos
+
+evalWriterM :: forall m a. Monad m => Position -> WriterM' m a -> m a
+evalWriterM pos prog = do evalStateT prog pos
+
+runWriterM :: forall m a. Monad m => Position -> WriterM' m a -> m (Tuple a Position)
+runWriterM pos prog = do runStateT prog pos
+
+getPosition :: forall m. Monad m => WriterM' m Position
+getPosition = mread
+
+getOutput :: forall m. Monad m => WriterM' m String
+getOutput = do mreads $ _.output >>> Str.joinWith ""
+
+clearOutput :: forall m. Monad m => WriterM m
+clearOutput = do mmodify_ $ _ { output = [] }
+
 token :: forall m. Monad m => String -> WriterM m
-token t = pure unit
+token t = do 
+  whenM needsSpace do write " "
+  write t
+  where
+  needsSpace = do
+    s <- mread
+    pure $ s.column > s.indentSpaces
 
 -- Add an indent to the current indent, requiring all subsequent writes to
 -- be at that indent or later. Restore the current indent once the inner program
 -- is done running.
 withIndent :: forall m. Monad m => Int -> WriterM m -> WriterM m
-withIndent n prog = do pure unit
+withIndent n prog = do 
+  old <- mread
+  let indented = old { indentSpaces = old.indentSpaces + n }
+  new <- execWriterM indented prog # lift
+  let final = new { indentSpaces = old.indentSpaces }
+  mwrite final 
 
--- TODO -- Put a newline. This should reset things so that we know to
--- be back at the indent, the next time we write.
+-- Write a string to the output. Newlines will be converted to changes to the 
+-- line and column state, while tabs will be converted to two-space inserts.
+write :: forall m. Monad m => String -> WriterM m
+write str = do
+  let lines = str # Str.split (Pattern "\n") >>> A.filter (_ == "")
+      mapped = lines <#> Str.replace (Pattern "\t") (Replacement $ spaces 2)
+  forEach_ mapped do 
+    each addToLine
+    inBetween \_ -> do addNewLine
+
+  where
+  -- Adding to the line always bumps to the requested indent if the current
+  -- column isn't there yet.
+  addToLine :: String -> WriterM m
+  addToLine x = do
+    prefix <- getIndentPrefix
+    let appendData = if prefix == "" then [x] else [prefix, x]
+        appendLen = Str.length prefix + Str.length x
+    mmodify_ \s -> s { 
+      output = s.output <> appendData
+    , column = s.column + appendLen
+    }
+    
+  getIndentPrefix :: WriterM' m String
+  getIndentPrefix = do
+    s <- mread
+    let len = max 0 (s.indentSpaces - s.column)
+        prefix = Str.joinWith "" (A.replicate len " ")
+    pure prefix
+    
+  addNewLine = do
+    mmodify_ \s -> s {
+      output = A.snoc s.output "\n"
+    , column = 0
+    , line = s.line + 1
+    }
+    
+  spaces i = Str.joinWith "" $ A.replicate i " "
+
 newline :: forall m . Monad m => WriterM m 
-newline = do pure unit
+newline = do write "\n"
 
 equals :: forall m. Monad m => WriterM m
 equals = token "="
@@ -137,6 +205,8 @@ string s = do
   token s
   token "\""
 
+-- An input multiline string automatically escapes the newlines and tabs so
+-- no escaping is needed. That ... should be fine, I think.
 multiLine :: forall m. Monad m => String -> WriterM m
 multiLine s = do 
   token "\"\"\"" 
