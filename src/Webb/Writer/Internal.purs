@@ -6,7 +6,6 @@ import Webb.Writer.ForEach
 import Control.Monad.State (StateT)
 import Data.Map (Map)
 import Data.Map as M
-import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..))
 
 
@@ -37,8 +36,8 @@ withIndent n prog = do pure unit
 
 -- TODO -- Put a newline. This should reset things so that we know to
 -- be back at the indent, the next time we write.
-putNewline :: forall m . Monad m => WriterM m 
-putNewline = do pure unit
+newline :: forall m . Monad m => WriterM m 
+newline = do pure unit
 
 equals :: forall m. Monad m => WriterM m
 equals = token "="
@@ -71,16 +70,16 @@ putRecordUpdate name map = do
 putRecord' :: forall m. Monad m => String -> Map String String -> WriterM m 
 putRecord' sep map = do
   token "{"
-  putNewline
+  newline
 
   let arr = M.toUnfoldable map :: Array _
   forEach_ arr do
-    each \(Tuple key typ) -> do
-      token key *> token sep *> token typ
+    each \(Tuple key value') -> do
+      token key *> token sep *> token value'
     inBetween \_ -> do
-      putNewline *> token ","
+      newline *> token ","
     
-  putNewline
+  newline
   token "}"
   
 -- Write the entire signature.
@@ -109,9 +108,9 @@ bodyEquals name args = do
 
 -- Puts the initial part of the newtype.
 newtypeEquals :: forall m. Monad m => 
-  String -> String -> WriterM m
-newtypeEquals name ctor = do
-  token "newtype" *> token name *> equals *> token ctor
+  String -> WriterM m
+newtypeEquals name = do
+  token "newtype" *> token name *> equals 
 
 dataEquals :: forall m. Monad m => WriterM m
 dataEquals = do token "data" *> equals
