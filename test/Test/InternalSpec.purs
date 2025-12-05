@@ -77,6 +77,12 @@ spec = describe "Testing internals of writing" do
     I.token "b"
     outputIs "a b"
     
+    posIs $ I.defaultPos {
+      indentSpaces = 0
+    , line = 0
+    , column = 3 
+    }
+    
   run "token will not add space at start of line" do
     I.withIndent 2 do
       I.token "a\n"
@@ -90,6 +96,12 @@ spec = describe "Testing internals of writing" do
       |    b
       |    c d
       """
+      
+    posIs $ I.defaultPos {
+      indentSpaces = 0
+    , line = 2
+    , column = 7
+    }
       
   run "can add a newline safely" do
     I.newline
