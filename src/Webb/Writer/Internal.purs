@@ -32,8 +32,8 @@ token t = pure unit
 -- Add an indent to the current indent, requiring all subsequent writes to
 -- be at that indent or later. Restore the current indent once the inner program
 -- is done running.
-indent :: forall m. Monad m => Int -> WriterM m -> WriterM m
-indent n prog = do pure unit
+withIndent :: forall m. Monad m => Int -> WriterM m -> WriterM m
+withIndent n prog = do pure unit
 
 -- TODO -- Put a newline. This should reset things so that we know to
 -- be back at the indent, the next time we write.
