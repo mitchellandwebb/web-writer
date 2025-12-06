@@ -20,7 +20,6 @@ import Node.Path as Path
 import Node.Process (cwd)
 import Webb.Monad.Prelude (expect, forceMaybe', notM)
 import Webb.State.Prelude (ShowRef, aread, areads, newShowRef, (:=))
-import Webb.Writer.Internal (St, WriterM, evalWriterM, getOutput)
 
 {- Helper functions for scripts that want to quickly setup and write to particular files. 
 -}
@@ -73,17 +72,15 @@ isOpen (F s) = areads isJust s.fd
 -- this can be used to write a corresponding 'write' for the WriterM monad
 -- itself, that writes the output while clearing it.
 write :: forall m. MonadAff m => 
-  File -> St -> WriterM m -> m Unit
-write (F s) st prog = do
+  File -> String -> m Unit
+write (F s) str = do
   mfd <- aread s.fd
   fd <- forceMaybe' "File is not open" mfd # liftAff
-  output <- evalWriterM st do prog *> getOutput
-  buf <- buffer output # liftEffect
+  buf <- buffer # liftEffect
   void $ fdAppend fd buf # liftAff
-  
   where
-  buffer :: String -> Effect Buffer
-  buffer str = fromString str UTF8
+  buffer :: Effect Buffer
+  buffer = fromString str UTF8
   
 -- Close the file.
 close :: forall m. MonadAff m => File -> m Unit
