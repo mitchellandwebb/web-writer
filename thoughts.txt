@@ -1,11 +1,1 @@
 
-
-So, we have the ability to write purescript code, retrieve it, and flush it. But now we need to put it somewhere. How do we do so? To do so, we need to be able to target a file. And to reasonably target a file, we need to be in the project base (spago.yaml).
-
-The below is what we need to be able to write files (relatively) cleanly. To assert the root, to destroy a directory (optional), to get a file by path, to open and truncate it, creating if it doesn't exist; and to write the given Writer program to the file.
-
-- assertProjectRoot :: Aff Unit
-- clearDir :: String -> Aff Unit
-- getFile :: String -> Aff File
-- openAndTruncate :: File -> Aff Unit
-- write file prog :: File -> WriterM -> Aff Unit
