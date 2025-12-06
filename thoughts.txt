@@ -1,18 +1,11 @@
 
-So what do we need to write purescript code?
 
-Well, we need File code. We need the ability to open and close Files properly, to
-delete them and create them; to verify that directories exist, or to create them, and to find the root of the Purescript project, and set that as the 'writing root', or 'file root', so that all writing operations can take place relative to that, without worrying about anything like 'current working directory'.
+So, we have the ability to write purescript code, retrieve it, and flush it. But now we need to put it somewhere. How do we do so? To do so, we need to be able to target a file. And to reasonably target a file, we need to be in the project base (spago.yaml).
 
-We also need code that transforms data structures into actual new purescript code. So for example, `Map String String` might be something that we can transform into an object literal defining a type. We might even define a Type union type, so that we have a `Map String Type` to define an Record type, using all type representations. As a result, defining a type alias would be as simple as 
+The below is what we need to be able to write files (relatively) cleanly. To assert the root, to destroy a directory (optional), to get a file by path, to open and truncate it, creating if it doesn't exist; and to write the given Writer program to the file.
 
-```
-putType "Device"
-putNewline $ indent 1 do putRecord map
-```
-
-As in the example above, ideally we would have an 'indent' function to specify the minimum indent level of the next write, such that the write would consistently be at the desired indent level without any need to worry about anything else -- that is, the write could _not_ be before the indent; any newline involved would automatically go to the indent level.
-
-The indent is thus the primary concern, along with how it interacts with the newline. Everything else is secondary when it comes to actually printing the Ps code.
-
-What else do we need? Nothing else, probably.
+- assertProjectRoot :: Aff Unit
+- clearDir :: String -> Aff Unit
+- getFile :: String -> Aff File
+- openAndTruncate :: File -> Aff Unit
+- write file prog :: File -> WriterM -> Aff Unit

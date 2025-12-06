@@ -18,8 +18,12 @@ package:
     - refs
     - tuples
     - webb-test
-    - webb-refer
     - webb-monad
+    - webb-refer
+    - node-fs
+    - node-process
+    - node-path
+    - node-buffer
   test:
     main: Test.Main
     dependencies: []
@@ -29,5 +33,5 @@ workspace:
   extraPackages:
     spec-discovery: 8.2.0
     webb-test: 0.0.1
-    webb-refer: 0.0.1
-    webb-monad: 0.0.1
+    webb-refer: 0.0.2
+    webb-monad: 0.0.2
